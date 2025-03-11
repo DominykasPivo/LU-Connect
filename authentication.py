@@ -3,10 +3,12 @@ import uuid  #https://medium.com/@nagendra.kumar1508/generating-unique-ids-using
 import hashlib #https://www.geeksforgeeks.org/md5-hash-python/ for password hashing
 
 #database connection
-with sqlite3.connect("LU-Connect.db") as connection:
-    cursor = connection.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE, password TEXT)")
-    connection.commit()
+def create_DB():
+    with sqlite3.connect("LU-Connect.db") as connection:
+        cursor = connection.cursor()
+        cursor.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE, password TEXT)")
+        connection.commit()
+    
 
 
 def register_to_DB(username, password):
@@ -24,3 +26,20 @@ def register_to_DB(username, password):
         cursor.execute("INSERT INTO users (id, username, password) VALUES (?, ?, ?)", (user_id, username, hashed_password))
         connection.commit()
     print("User registered successfully!")
+
+
+def login_to_DB(username, password):
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    with sqlite3.connect("LU-Connect.db") as connection:
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password))
+        user = cursor.fetchone()
+        if user:
+            print("Login successful! User ID:", user[0])
+            return user[0] # return user id and use the data for server.py
+        else:
+            print("Invalid credentials!")
+            return None
+
+if __name__ == "__main__":
+    create_DB()
