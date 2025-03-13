@@ -15,40 +15,66 @@ clients_lock = threading.Lock()
 semaphore = threading.Semaphore(MAX_CLIENTS)
 waiting_queue = queue.Queue()
 
+def handle_file_transfer():
+    pass
+
+def handle_login(client_socket, username, password):
+                # Call the login_to_DB function from authentication.py
+                user_id = login_to_DB(username, password)
+                if user_id:
+                    client_socket.send(f"Login successful! Welcome {username}!".encode())
+                    return username, user_id
+                else:
+                    client_socket.send("Invalid credentials!".encode())
+                    return None, None
+                
+def handle_registration(client_socket, username, password):
+    # Call the register_to_DB function from authentication.py
+    if register_to_DB(username, password):
+        client_socket.send("Registration successful!".encode())
+    else:
+        client_socket.send("Registration failed!".encode())
+
+# Function to broadcast messages to all connected clients
+def broadcast_message(sender_socket, message):
+    with clients_lock:
+        for client in clients:
+            if client != sender_socket:
+                try:
+                    client.send(message.encode())
+                except:
+                    # Remove the client if sending fails
+                    del clients[client]
+                    client.close()
+
+
 
 def handle_request(client_socket, client_address):
     with semaphore:
         print(f"Connection from {client_address} has been established!")
-        client_socket.send("Welcome to the chatroom!".encode())
-
+        #client_socket.send("Welcome to the chatroom!".encode())
         try:
-            client_socket.send("Type register to create an account or login to sign in: ".encode())
-            choice = client_socket.recv(1024).decode().strip().lower()
-            # Register 
-            if choice == "register":
-                client_socket.send("Enter your username: ".encode())
-                username = client_socket.recv(1024).decode()
-                client_socket.send("Enter your password: ".encode())
-                password = client_socket.recv(1024).decode()
-                register_to_DB(username, password)
+            # Receive the action (register or login) from the client
+            action = client_socket.recv(1024).decode().strip().lower()
+            if action not in ["register", "login"]:
+                client_socket.send("Invalid action!".encode())
                 return
+            username = client_socket.recv(1024).decode().strip()
+            password = client_socket.recv(1024).decode().strip()
 
-            # Login
-            elif choice == "login":
-                client_socket.send("Enter your username: ".encode())
-                username = client_socket.recv(1024).decode()
-                client_socket.send("Enter your password: ".encode())
-                password = client_socket.recv(1024).decode()
-                user_id = login_to_DB(username, password)
-
-                if not user_id:
-                    client_socket.send("Invalid credentials!".encode())
+            if action == "register":
+                # Handle registration
+                handle_registration(client_socket, username, password)
+                return
+            elif action == "login":
+                # Handle login
+                username, user_id = handle_login(client_socket, username, password)
+                if not username:
                     return
-                client_socket.send(f"Login successful! Welcome {username}!".encode())
-                with clients_lock: #ensuring thread safety
-                    clients[client_socket] = user_id
-
-            #handle/broadcast the messages
+                with clients_lock:
+                    clients[client_socket] = (username, user_id)
+                broadcast_message(client_socket, f"{username} has joined the chat!")
+            
             while True:
                 message = client_socket.recv(1024).decode()
 
