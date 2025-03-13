@@ -2,7 +2,7 @@
 import socket
 import threading
 import queue 
-from authentication import login_to_DB, register_to_DB
+from authentication import login_to_DB, register_to_DB, create_DB
 
 #SERVER CONFIGURATION
 SERVER_HOST = "127.0.0.1"
@@ -112,6 +112,7 @@ def start_server():
 
 
 if __name__ == "__main__":
+    create_DB()
     start_server()
 
 #TASKS:

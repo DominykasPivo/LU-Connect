@@ -1,10 +1,12 @@
 import sqlite3 ##https://www.ionos.com/digitalguide/websites/web-development/sqlite3-python/  for database setup
 import uuid  #https://medium.com/@nagendra.kumar1508/generating-unique-ids-using-python-a-practical-guide-97ed7729071d  for unique user id's
 import hashlib #https://www.geeksforgeeks.org/md5-hash-python/ for password hashing
+import os  #https://www.geeksforgeeks.org/python-os-path-join-method/ for database connection
 
+DB_PATH = os.path.join(os.path.dirname(__file__), "LU-Connect.db")
 #database connection
 def create_DB():
-    with sqlite3.connect("LU-Connect.db") as connection:
+    with sqlite3.connect(DB_PATH) as connection:
         cursor = connection.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE, password TEXT UNIQUE)")
         connection.commit()
@@ -30,7 +32,7 @@ def register_to_DB(username, password):
 
 def login_to_DB(username, password):
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    with sqlite3.connect("LU-Connect.db") as connection:
+    with sqlite3.connect(DB_PATH) as connection:
         cursor = connection.cursor()
         cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password))
         user = cursor.fetchone()
@@ -41,5 +43,4 @@ def login_to_DB(username, password):
             print("Invalid credentials!")
             return False
 
-if __name__ == "__main__":
-    create_DB()
+
