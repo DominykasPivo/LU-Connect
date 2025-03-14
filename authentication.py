@@ -6,6 +6,8 @@ import os  #https://www.geeksforgeeks.org/python-os-path-join-method/ for databa
 DB_PATH = os.path.join(os.path.dirname(__file__), "LU-Connect.db")
 #database connection
 def create_DB():
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
     with sqlite3.connect(DB_PATH) as connection:
         cursor = connection.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE, password TEXT UNIQUE)")

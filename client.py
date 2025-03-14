@@ -15,9 +15,14 @@ FORMAT = "utf-8"
 class GUI:
     def __init__(self, root):
         self.root = root
-
+        self.root.geometry("250x250")
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.connect((SERVER_HOST, SERVER_PORT))
+        try:
+            self.client_socket.connect((SERVER_HOST, SERVER_PORT))
+        except Exception as e:
+            print(f"Error connecting to server: {e}")
+            messagebox.showerror("Error", f"Error connecting to server: {e}")
+            return
 
         self.username = None
         self.password = None
@@ -29,14 +34,9 @@ class GUI:
         for widget in self.root.winfo_children():
             widget.destroy()
         tk.Label(self.root, text="Do you want to login or register?").pack()
+        tk.Button(self.root, text="Login", command=self.login_window).pack()
+        tk.Button(self.root, text="Register", command=self.register_window).pack()
 
-        def open_login():
-            self.login_window()
-
-        def open_register():
-            self.register_window()
-        tk.Button(self.root, text="Login", command=open_login).pack()
-        tk.Button(self.root, text="Register", command=open_register).pack()
 
     def login_window(self):
         self.root.title("Login")
@@ -54,18 +54,23 @@ class GUI:
         def login():
             self.username = username_entry.get()
             self.password = password_entry.get()
-            self.client_socket.send("login".encode(FORMAT))  # Send action
-            self.client_socket.send(self.username.encode(FORMAT))  # Send username
-            self.client_socket.send(self.password.encode(FORMAT))  # Send password
+            try:
+                message = f"login\n{self.username}\n{self.password}\n"
+                print(message)
+                self.client_socket.sendall(message.encode(FORMAT))
 
-            # Wait for the server's response
-            response = self.client_socket.recv(1024).decode(FORMAT)
-            if "success" in response.lower():
-                messagebox.showinfo("Success", "Login successful!")
-                self.chat_window()  # Open the chat window
-            else:
-                messagebox.showerror("Error", "Invalid credentials!")
+                # Wait for the server's response
+                response = self.client_socket.recv(1024).decode(FORMAT)
+                if "success" in response.lower():
+                    messagebox.showinfo("Success", "Login successful!")
+                    self.chat_window()  # Open the chat window
+                else:
+                    messagebox.showerror("Error", "Invalid credentials!")
+            except Exception as e:
+                print(f"Error during login: {e}")
+                messagebox.showerror("Error", f"Error during login: {e}")
         tk.Button(self.root, text="Login", command=login).pack()
+        tk.Button(self.root, text="Go back", command=self.login_or_register).pack()
 
     def register_window(self):
         self.root.title("Register")
@@ -79,23 +84,37 @@ class GUI:
         tk.Label(self.root, text="Password").pack()
         password_entry = tk.Entry(self.root, show="*")
         password_entry.pack()
-
+        
         def register():
-            self.username = username_entry.get()
-            self.password = password_entry.get()
+            try:
+                self.username = username_entry.get()
+                self.password = password_entry.get()
 
-            self.client_socket.send("register".encode(FORMAT))  # Send action
-            self.client_socket.send(self.username.encode(FORMAT))  # Send username
-            self.client_socket.send(self.password.encode(FORMAT))  # Send password
+                print(f"Sending registration request for user username: {self.username}")
+                print(f"Sending registration request for user password: {self.password}")
+                message = f"register\n{self.username}\n{self.password}\n"
+                self.client_socket.sendall(message.encode(FORMAT))
 
-            # Wait for the server's response
-            response = self.client_socket.recv(1024).decode(FORMAT)
-            if "success" in response.lower():
-                messagebox.showinfo("Success", "Registration successful!")
-                self.login_window()  # Open the login window
-            else:
-                messagebox.showerror("Error", "Invalid credentials!")
+                # Wait for the server's response
+                response = self.client_socket.recv(1024).decode(FORMAT)
+                print(f"Registration response: {response}")
+                if "success" in response.lower():
+                    messagebox.showinfo("Success", "Registration successful!")
+
+                     # Close the current socket and create a new one for login
+                    # self.client_socket.close()
+                    # self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    # self.client_socket.connect((SERVER_HOST, SERVER_PORT))
+
+                    self.login_window()  # Open the login window
+
+                else:
+                    messagebox.showerror("Error", "Invalid credentials!")
+            except Exception as e:
+                print(f"Error during registration: {e}")
+                messagebox.showerror("Error", f"Error during registration: {e}")
         tk.Button(self.root, text="Register", command=register).pack()
+        tk.Button(self.root, text="Go back", command=self.login_or_register).pack()
 
     def chat_window(self):
         self.root.title("Chatroom")

@@ -3,7 +3,7 @@ import socket
 import threading
 import queue 
 from authentication import login_to_DB, register_to_DB, create_DB
-
+import time
 #SERVER CONFIGURATION
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 7000
@@ -18,22 +18,37 @@ waiting_queue = queue.Queue()
 def handle_file_transfer():
     pass
 
+
+def recv_all(sock):
+    """Helper function to receive a complete message from the client."""
+    data = b""
+    while True:
+        part = sock.recv(1024)
+        data += part
+        if b"\n" in data:
+            break
+    return data.decode().strip()
+
 def handle_login(client_socket, username, password):
-                # Call the login_to_DB function from authentication.py
-                user_id = login_to_DB(username, password)
-                if user_id:
-                    client_socket.send(f"Login successful! Welcome {username}!".encode())
-                    return username, user_id
-                else:
-                    client_socket.send("Invalid credentials!".encode())
-                    return None, None
+    print(f"Attempting to log in user: {username}")
+    if login_to_DB(username, password):
+        client_socket.send("Login successful!".encode())
+        print(f"User {username} logged in successfully.")
+        return True  # Return True for successful login
+    else:
+        client_socket.send("Invalid credentials!".encode())
+        print(f"Invalid credentials for user: {username}")
+        return False  # Return False for failed login
                 
 def handle_registration(client_socket, username, password):
     # Call the register_to_DB function from authentication.py
+    print(f"Attempting to register user: {username}")
     if register_to_DB(username, password):
         client_socket.send("Registration successful!".encode())
+        print(f"User {username} registered successfully.")
     else:
-        client_socket.send("Registration failed!".encode())
+        client_socket.send("User already exists!".encode())
+        print(f"User {username} already exists.")
 
 # Function to broadcast messages to all connected clients
 def broadcast_message(sender_socket, message):
@@ -41,7 +56,8 @@ def broadcast_message(sender_socket, message):
         for client in clients:
             if client != sender_socket:
                 try:
-                    client.send(message.encode())
+                    username = clients[sender_socket]  # Get the sender's username
+                    client.send(f"{username}: {message}".encode())
                 except:
                     # Remove the client if sending fails
                     del clients[client]
@@ -54,35 +70,50 @@ def handle_request(client_socket, client_address):
         print(f"Connection from {client_address} has been established!")
         #client_socket.send("Welcome to the chatroom!".encode())
         try:
+            while True:  # Loop to handle registration and login requests
             # Receive the action (register or login) from the client
-            action = client_socket.recv(1024).decode().strip().lower()
-            if action not in ["register", "login"]:
-                client_socket.send("Invalid action!".encode())
-                return
-            username = client_socket.recv(1024).decode().strip()
-            password = client_socket.recv(1024).decode().strip()
 
-            if action == "register":
-                # Handle registration
-                handle_registration(client_socket, username, password)
-                return
-            elif action == "login":
-                # Handle login
-                username, user_id = handle_login(client_socket, username, password)
-                if not username:
+                data = recv_all(client_socket)
+                print(f"Received data: {data}")
+
+                parts = data.split("\n")
+                if len(parts) < 3:
+                    client_socket.send("Invalid request!".encode())
                     return
-                with clients_lock:
-                    clients[client_socket] = (username, user_id)
-                broadcast_message(client_socket, f"{username} has joined the chat!")
+            
+                action = parts[0].strip()
+                username = parts[1].strip()
+                password = parts[2].strip()
+
+                print(f"Action: {action}, Username: {username}, Password: {password}")  # Debug stat
+
+                if action == "register":
+                    # Handle registration
+                    handle_registration(client_socket, username, password)
+                elif action == "login":
+                    print("Login")
+                    # Handle login
+                    if not handle_login(client_socket, username, password):
+                        continue
+                    with clients_lock:
+                        clients[client_socket] = username
+                    broadcast_message(client_socket, f"{username} has joined the chat!")
+                    break # exit the loop after successful login
             
             while True:
                 message = client_socket.recv(1024).decode()
-
+                if not message:  # Client disconnected
+                    break
                 print(f"{client_address}: {message}")
                 with clients_lock: #ensuring thread safety
                     for client in clients:
                         if client != client_socket:
-                            client.send(f"{client_address}: {message}".encode())
+                            try:
+                                client.send(f"{username}: {message}".encode())
+                            except:
+                                # Remove the client if sending fails
+                                del clients[client]
+                                client.close()
 
         except Exception as e:
             print(f"Connection from {client_address} has been terminated!")
@@ -92,6 +123,10 @@ def handle_request(client_socket, client_address):
                     del clients[client_socket]
             client_socket.close()
             print(f"Connection from {client_address} has been closed.")
+
+            if not waiting_queue.empty():
+                client_socket, client_address = waiting_queue.get()
+                threading.Thread(target=handle_request, args=(client_socket, client_address)).start()
         
 
 def start_server():
