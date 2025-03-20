@@ -23,10 +23,20 @@ def handle_file_transfer():
 
 def check_queue():
     """Check if there are clients waiting in the queue and process them if space is available"""
-    while not waiting_queue.empty() and threading.active_count() - 1 < MAX_CLIENTS:
-        client_socket, client_address = waiting_queue.get()
-        print(f"[QUEUE] Processing waiting client from {client_address}")
-        threading.Thread(target=handle_request, args=(client_socket, client_address, True)).start()
+    while True:
+        try:
+            with clients_lock:
+                active_clients = len(clients)
+            
+            if not waiting_queue.empty() and active_clients < MAX_CLIENTS:
+                client_socket, client_address = waiting_queue.get()
+                print(f"[QUEUE] Processing waiting client from {client_address}")
+                threading.Thread(target=handle_request, args=(client_socket, client_address, True)).start()
+                
+            # Give other threads a chance to run
+            time.sleep(1)
+        except Exception as e:
+            print(f"Error in check_queue: {e}")
 
 def recv_all(sock):
     """Helper function to receive a complete message from the client."""
@@ -42,7 +52,9 @@ def handle_login(client_socket, username, password):
     """Handle login authentication"""
     print(f"Attempting to log in user: {username}")
     if login_to_DB(username, password):
-        if threading.active_count() - 1 >= MAX_CLIENTS:
+        with clients_lock:
+            active_clients = len(clients)
+        if active_clients >= MAX_CLIENTS:
             position = waiting_queue.qsize() + 1
             wait_time = position * 30  # Approximate wait time in seconds
             response = f"You are in position {position} in the queue. Approximate wait time: {wait_time} seconds."
@@ -78,14 +90,23 @@ def handle_registration(client_socket, username, password):
 def broadcast_message(sender_socket, message):
     """Broadcast a message to all connected clients except the sender"""
     with clients_lock:
-        for client in clients:
+        sender_username = clients.get(sender_socket, "Unknown")
+        # Create a copy of the keys to avoid modification during iteration
+        client_list = list(clients.keys())
+        for client in client_list:
             if client != sender_socket:
                 try:
-                    username = clients[sender_socket]
-                    client.send(f"{username}: {message}".encode())
+                    client.send(f"{sender_username}: {message}".encode())
                 except:
-                    del clients[client]
-                    client.close()
+                    # If sending fails, client has disconnected
+                    if client in clients:
+                        username = clients[client]
+                        print(f"Detected disconnected client: {username}")
+                        del clients[client]
+                        try:
+                            client.close()
+                        except:
+                            pass
 
 def handle_request(client_socket, client_address, from_queue=False):
     """Handle client connection and requests"""
@@ -93,8 +114,6 @@ def handle_request(client_socket, client_address, from_queue=False):
         print(f"Connection from {client_address} has been established!")
         try:
             while True:  # Loop to handle registration and login requests
-            # Receive the action (register or login) from the client
-
                 data = recv_all(client_socket)
                 print(f"Received data: {data}")
 
@@ -110,44 +129,77 @@ def handle_request(client_socket, client_address, from_queue=False):
                 print(f"Action: {action}, Username: {username}, Password: {password}")  # Debug stat
 
                 if action == "register":
-                    # Handle registration
                     handle_registration(client_socket, username, password)
                 elif action == "login":
-                    print("Login")
-                    # Handle login
-                    if not handle_login(client_socket, username, password):
+                    if handle_login(client_socket, username, password):
+                        with clients_lock:
+                            clients[client_socket] = username
+                        broadcast_message(client_socket, "has joined the chat!")
+                        break  # Exit the loop after successful login
+                    else:
                         client_socket.send("Invalid credentials!".encode())
-                        continue
-                    with clients_lock:
-                        clients[client_socket] = username
-                    broadcast_message(client_socket, f"{username} has joined the chat!")
-                    break # exit the loop after successful login
+                else:
+                    client_socket.send("Invalid action!".encode())
 
             while True:
-                message = client_socket.recv(1024).decode()
-                if not message:
+                try:
+                    message = client_socket.recv(1024).decode()
+                    if not message:
+                        break
+                    print(f"{username}: {message}")
+                    broadcast_message(client_socket, message)
+                except Exception as e:
+                    print(f"Error receiving message from {client_address}: {e}")
                     break
-                print(f"{client_address}: {message}")
-                broadcast_message(client_socket, f"{client_address}: {message}")
 
         except Exception as e:
             print(f"Connection from {client_address} has been terminated! Error: {e}")
         finally:
             with clients_lock:
                 if client_socket in clients:
+                    username = clients[client_socket]
                     del clients[client_socket]
+                    broadcast_message(client_socket, "has left the chat.")
             client_socket.close()
             print(f"Connection from {client_address} has been closed.")
+            # Check the queue after a client disconnects
+            check_queue()
+
+def heartbeat_monitor():
+    """Monitor client connections with periodic heartbeats"""
+    while True:
+        time.sleep(5)  # Check every 5 seconds
+        with clients_lock:
+            client_list = list(clients.keys())
+            
+        for client_socket in client_list:
+            try:
+                # Send an empty heartbeat message that clients will ignore
+                client_socket.send(b"__heartbeat__\n")
+            except:
+                # If we can't send, the client is disconnected
+                with clients_lock:
+                    if client_socket in clients:
+                        username = clients[client_socket]
+                        print(f"Heartbeat detected disconnected client: {username}")
+                        del clients[client_socket]
+                        broadcast_message(client_socket, "has left the chat.")
+                try:
+                    client_socket.close()
+                except:
+                    pass
 
 def start_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((SERVER_HOST, SERVER_PORT))
     server_socket.listen(MAX_CLIENTS)
     print(f"Server is listening on {SERVER_HOST}:{SERVER_PORT}")
-
+    threading.Thread(target=check_queue, daemon=True).start()
     while True:
         client_socket, client_address = server_socket.accept()
-        if threading.active_count() - 1 >= MAX_CLIENTS:
+        with clients_lock:
+            active_clients = len(clients)
+        if active_clients >= MAX_CLIENTS:
             print(f"[WAITING] {client_address} added to waiting queue.")
             waiting_queue.put((client_socket, client_address))
             continue

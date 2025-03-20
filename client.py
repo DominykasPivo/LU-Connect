@@ -16,6 +16,7 @@ class GUI:
     def __init__(self, root):
         self.root = root
         self.root.geometry("250x250")
+
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.client_socket.connect((SERVER_HOST, SERVER_PORT))
@@ -27,7 +28,16 @@ class GUI:
         self.username = None
         self.password = None
         
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.login_or_register()
+
+    def on_closing(self):
+        try:
+            self.client_socket.close()
+        except Exception as e:
+            print(f"Error closing socket: {e}")
+        finally:
+            self.root.destroy()
 
     def login_or_register(self):
         self.root.title("Login/Register")
@@ -122,7 +132,7 @@ class GUI:
         self.chat_area.pack(expand=True, fill=tk.BOTH)
         self.chat_area.config(state="disabled") 
 
-        threading.Thread(target=self.receive_messages).start()
+        threading.Thread(target=self.receive_messages, daemon=True).start()
 
         self.message_entry = tk.Entry(self.root)
         self.message_entry.pack(fill=tk.X, padx=10, pady=10)
@@ -230,6 +240,11 @@ class GUI:
                 self.chat_area.insert(tk.END, f"{timestamp} [{message}]\n")
                 self.chat_area.config(state="disabled")
                 self.chat_area.yview(tk.END)
+            except ConnectionResetError:
+                print("Server forcibly closed the connection.")
+                self.client_socket.close()
+                self.root.after(0, self.show_disconnect_message)  # Notify user in the GUI
+                break
             except Exception as e:
                 print("[EXCEPTION] ", e)
                 break
