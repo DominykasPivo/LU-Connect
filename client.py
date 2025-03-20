@@ -11,7 +11,6 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 7000
 FORMAT = "utf-8"
 
-
 class GUI:
     def __init__(self, root):
         self.root = root
@@ -19,15 +18,15 @@ class GUI:
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.client_socket.connect((SERVER_HOST, SERVER_PORT))
+            response = self.client_socket.recv(1024).decode(FORMAT)
+            if response == "queue":
+                self.waiting_window()
+            else:
+                self.login_or_register()
         except Exception as e:
             print(f"Error connecting to server: {e}")
             messagebox.showerror("Error", f"Error connecting to server: {e}")
             return
-
-        self.username = None
-        self.password = None
-        
-        self.login_or_register()
 
     def login_or_register(self):
         self.root.title("Login/Register")
@@ -64,6 +63,9 @@ class GUI:
                 if "success" in response.lower():
                     messagebox.showinfo("Success", "Login successful!")
                     self.chat_window()  # Open the chat window
+                # elif "queue" in response.lower():
+                #     messagebox.showinfo("Queue", "Server is full. You are in a waiting queue.")
+                #     self.waiting_window()  # Open the waiting window
                 else:
                     messagebox.showerror("Error", "Invalid credentials!")
             except Exception as e:
@@ -115,6 +117,26 @@ class GUI:
                 messagebox.showerror("Error", f"Error during registration: {e}")
         tk.Button(self.root, text="Register", command=register).pack()
         tk.Button(self.root, text="Go back", command=self.login_or_register).pack()
+
+    def waiting_window(self):
+        self.root.title("Waiting Room")
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        tk.Label(self.root, text="You are in the queue. Please wait...").pack()
+        self.wait_label = tk.Label(self.root, text="Checking status...")
+        self.wait_label.pack()
+        def check_status():
+            try:
+                while True:
+                    response = self.client_socket.recv(1024).decode(FORMAT)
+                    print(response, "queeu")
+                    if "welcome" in response.lower():
+                        messagebox.showinfo("Access Granted", "You can use the chat!")
+                        self.login_or_register()
+                        break
+            except Exception as e:
+                messagebox.showerror("Error", f"Connection lost: {e}")
+        threading.Thread(target=check_status, daemon=True).start()
 
     def chat_window(self):
         self.root.title("Chatroom")

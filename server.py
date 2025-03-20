@@ -12,7 +12,7 @@ MAX_CLIENTS = 3 # when there will be 3 clients connected to the server, the 4th 
 clients = {}
 clients_lock = threading.Lock()
 
-semaphore = threading.Semaphore(MAX_CLIENTS)
+semaphore = threading.Semaphore(2)
 waiting_queue = queue.Queue()
 
 def handle_file_transfer():
@@ -23,11 +23,18 @@ def recv_all(sock):
     """Helper function to receive a complete message from the client."""
     data = b""
     while True:
-        part = sock.recv(1024)
-        data += part
-        if b"\n" in data:
-            break
-    return data.decode().strip()
+        try:
+            part = sock.recv(1024)
+            if not part:
+                break  # Stop if client disconnects
+            data += part
+            if b"\n" in data:
+                break
+        except ConnectionResetError:
+            print("[WARNING] Client forcibly closed connection.")
+            return None  # Return None if connection was lost
+    return data.decode().strip() if data else None
+
 
 def handle_login(client_socket, username, password):
     print(f"Attempting to log in user: {username}")
@@ -80,7 +87,14 @@ def broadcast_message(sender_socket, message):
 
 
 def handle_request(client_socket, client_address):
+    with clients_lock:
+        if len(clients) >= 2:  # If server is full
+            print(f"[WAITING] {client_address} added to queue.")
+            waiting_queue.put((client_socket, client_address))
+            client_socket.send("queue".encode())  # Notify client they're in queue
+            return  # Exit this function so they don't proceed to chat immediately
     with semaphore:
+        print(f"semaphore value: ", semaphore._value)
         print(f"Connection from {client_address} has been established!")
         #client_socket.send("Welcome to the chatroom!".encode())
         try:
@@ -113,20 +127,6 @@ def handle_request(client_socket, client_address):
                         client_socket.send("Invalid credentials!".encode())
                 else:
                     client_socket.send("Invalid action!".encode())
-                # if action == "register":
-                #     # Handle registration
-                #     handle_registration(client_socket, username, password)
-                # elif action == "login":
-                #     print("Login")
-                #     # Handle login
-                #     if not handle_login(client_socket, username, password):
-                #         client_socket.send("Invalid action!".encode())
-                #         continue
-                #     with clients_lock:
-                #         clients[client_socket] = username
-                #     broadcast_message(client_socket, "has joined the chat!")
-                #     break # exit the loop after successful login
-            
             while True:
                 message = client_socket.recv(1024).decode()
                 if not message:  # Client disconnected
@@ -145,32 +145,57 @@ def handle_request(client_socket, client_address):
         except Exception as e:
             print(f"Connection from {client_address} has been terminated!")
         finally:   #close the connection with all threads
+            print(f"[DEBUG] Finally block executing for {client_address}")
             with clients_lock:
                 if client_socket in clients:
+                    username = clients[client_socket]
                     del clients[client_socket]
-            client_socket.close()
             print(f"Connection from {client_address} has been closed.")
-
+            client_socket.close()
+            semaphore.release()
+            print("semaphore value: ", semaphore._value)
+            print("cehcking queue")
             if not waiting_queue.empty():
-                client_socket, client_address = waiting_queue.get()
-                threading.Thread(target=handle_request, args=(client_socket, client_address)).start()
+                queue_client_socket, queue_client_address = waiting_queue.get()
+                print(f"[QUEUE] Moving {client_address} from queue to active clients.")
+                queue_client_socket.send("welcome".encode())  # Notify client they can join
+                threading.Thread(target=handle_request, args=(queue_client_socket, queue_client_address)).start()
+
         
+# def manage_waiting_queue():
+#     with clients_lock:
+#             active_clients = len(clients)
+
+#     while True:
+#         if not waiting_queue.empty() and  active_clients < 2:
+#             client_socket, client_address = waiting_queue.get()
+#             print(f"[QUEUE] Moving {client_address} from queue to active clients.")
+#             client_socket.send("welcome".encode())  # Notify client they can join
+#             threading.Thread(target=handle_request, args=(client_socket, client_address)).start()
+#         time.sleep(1)
+
+
 
 def start_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((SERVER_HOST, SERVER_PORT))
-    server_socket.listen(MAX_CLIENTS)
+    server_socket.listen(2)
     print(f"Server is listening on {SERVER_HOST}:{SERVER_PORT}")
     
+    #threading.Thread(target=manage_waiting_queue, daemon=True).start()
+
     #accepting the clients
     while True:
         client_socket, client_address = server_socket.accept()
-        if threading.active_count() - 1 >= MAX_CLIENTS: # take in up to three clients at once 
+        with clients_lock:
+            active_clients = len(clients)
+        if active_clients >= 2: # take in up to three clients at once 
             print(f"[WAITING] {client_address} added to waiting queue.")
             waiting_queue.put((client_socket, client_address))
-            continue
-        
-        threading.Thread(target=handle_request, args=(client_socket, client_address)).start()
+            client_socket.send("queue".encode())
+        else:
+            client_socket.send("no queue".encode())
+            threading.Thread(target=handle_request, args=(client_socket, client_address)).start()
 
 
 if __name__ == "__main__":
