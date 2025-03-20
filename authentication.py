@@ -6,22 +6,19 @@ import os  #https://www.geeksforgeeks.org/python-os-path-join-method/ for databa
 DB_PATH = os.path.join(os.path.dirname(__file__), "LU-Connect.db")
 #database connection
 def create_DB():
-    """Create the database if it doesn't exist or connect to it if it does"""
     try:
         with sqlite3.connect(DB_PATH) as connection:
             cursor = connection.cursor()
             # Important: Make sure password is NOT marked as UNIQUE
-            cursor.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE, password TEXT)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE, password TEXT UNIQUE)")
             connection.commit()
             print(f"Successfully connected to database at {DB_PATH}")
     except sqlite3.Error as e:
         print(f"SQLite error: {e}")
     except Exception as e:
         print(f"Error creating/connecting to database: {e}")
-    
 
 def register_to_DB(username, password):
-    """Register a new user to the database"""
     try:
         user_id = str(uuid.uuid4())
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
@@ -34,7 +31,7 @@ def register_to_DB(username, password):
             if user:
                 print(f"User {username} already exists!")
                 return False
-                
+
             # Insert the new user
             print(f"Inserting new user {username} with ID {user_id}")
             cursor.execute("INSERT INTO users (id, username, password) VALUES (?, ?, ?)", 
@@ -52,7 +49,6 @@ def register_to_DB(username, password):
 
 
 def login_to_DB(username, password):
-    """Authenticate a user"""
     try:
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         with sqlite3.connect(DB_PATH) as connection:
@@ -71,5 +67,3 @@ def login_to_DB(username, password):
     except Exception as e:
         print(f"Unexpected error during login: {e}")
         return False
-
-
