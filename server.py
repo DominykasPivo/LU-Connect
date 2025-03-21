@@ -4,6 +4,10 @@ import threading
 import queue 
 from authentication import login_to_DB, register_to_DB, create_DB
 import time
+import pygame
+
+pygame.mixer.init()
+
 #SERVER CONFIGURATION
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 7000
@@ -14,6 +18,8 @@ clients_lock = threading.Lock()
 
 semaphore = threading.Semaphore(2)
 waiting_queue = queue.Queue()
+
+sound_preferences = {}
 
 def handle_file_transfer():
     pass
@@ -74,11 +80,14 @@ def handle_registration(client_socket, username, password):
 # Function to broadcast messages to all connected clients
 def broadcast_message(sender_socket, message):
     with clients_lock:
+        sender_username = clients.get(sender_socket, "Unknown")
         for client in clients:
             if client != sender_socket:
                 try:
-                    username = clients[sender_socket]  # Get the sender's username
-                    client.send(f"{username}: {message}".encode())
+                    client.send(f"{sender_username}: {message}".encode())
+                    if sound_preferences.get(client, False):
+                        pygame.mixer.music.load('notification.mp3')
+                        pygame.mixer.music.play()
                 except:
                     # Remove the client if sending fails
                     del clients[client]
@@ -121,26 +130,38 @@ def handle_request(client_socket, client_address):
                     if handle_login(client_socket, username, password):
                         with clients_lock:
                             clients[client_socket] = username
+                            sound_preferences[client_socket] = False  # Default to sound off
                         broadcast_message(client_socket, "has joined the chat!")
                         break  # Exit the loop after successful login
                     else:
                         client_socket.send("Invalid credentials!".encode())
                 else:
                     client_socket.send("Invalid action!".encode())
+            # Handle chat messages
             while True:
                 message = client_socket.recv(1024).decode()
                 if not message:  # Client disconnected
                     break
                 print(f"{client_address}: {message}")
-                with clients_lock: #ensuring thread safety
-                    for client in clients:
-                        if client != client_socket:
-                            try:
-                                client.send(f"{username}: {message}".encode())
-                            except:
-                                # Remove the client if sending fails
-                                del clients[client]
-                                client.close()
+                if "toggle_sound" in message:
+                    with clients_lock:
+                        sound_preferences[client_socket] = not sound_preferences.get(client_socket, False)
+                        status = "enabled" if sound_preferences[client_socket] else "disabled"
+                        client_socket.send(f"Sound {status}".encode())
+                        print(f"Sound {status} for {clients[client_socket]}")
+                else:
+                    with clients_lock: #ensuring thread safety
+                        for client in clients:
+                            if client != client_socket:
+                                try:
+                                    client.send(f"{username}: {message}".encode())
+                                    if sound_preferences.get(client, False):
+                                        pygame.mixer.music.load('notification.mp3')
+                                        pygame.mixer.music.play()
+                                except:
+                                    # Remove the client if sending fails
+                                    del clients[client]
+                                    client.close()
 
         except Exception as e:
             print(f"Connection from {client_address} has been terminated!")
@@ -150,6 +171,7 @@ def handle_request(client_socket, client_address):
                 if client_socket in clients:
                     username = clients[client_socket]
                     del clients[client_socket]
+                    del sound_preferences[client_socket]
             print(f"Connection from {client_address} has been closed.")
             client_socket.close()
             semaphore.release()

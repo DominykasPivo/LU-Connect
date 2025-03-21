@@ -172,12 +172,40 @@ class GUI:
         self.file_button = tk.Button(self.root, text="Send File", command=send_file)
         self.file_button.pack()
 
+        # Initialize the sound preference
+        self.sound_var = tk.BooleanVar(value=False)
+        # Create the checkbox with correct initial text
+        self.sound_checkbox = tk.Checkbutton(
+            self.root, 
+            text="Unmute Sound", 
+            variable=self.sound_var, 
+            onvalue=True, 
+            offvalue=False,
+            command=self.toggle_sound
+        )
+        self.sound_checkbox.pack(anchor='e', padx=10)
 
+    def toggle_sound(self):
+        # Get the new state after the checkbox has been clicked
+        new_state = self.sound_var.get() 
+        # Send command to server
+        self.client_socket.send("toggle_sound\n".encode(FORMAT))
+        # Update checkbox text based on the new state
+        if new_state:
+            self.sound_checkbox.config(text="Mute Sound")
+        else:
+            self.sound_checkbox.config(text="Unmute Sound")
+    
 
     def receive_messages(self):
         while True:
             try:
                 message = self.client_socket.recv(1024).decode(FORMAT)
+
+                # Skip displaying sound toggle messages
+                if "Sound enabled" in message or "Sound disabled" in message or "toggle_sound" in message:
+                    continue
+
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 self.chat_area.config(state="normal")
                 self.chat_area.insert(tk.END, f"[{timestamp}] {message}\n")
