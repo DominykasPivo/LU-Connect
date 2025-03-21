@@ -15,6 +15,7 @@ def register_to_DB(username, password):
     user_id = str(uuid.uuid4())  
     hashed_password = hashlib.sha256(password.encode()).hexdigest()  # at first chose md5 but sha256 is more secure
 
+<<<<<<< Updated upstream
     with sqlite3.connect("LU-Connect.db") as connection:
         cursor = connection.cursor()
         # Check if user already exists
@@ -43,3 +44,49 @@ def login_to_DB(username, password):
 
 if __name__ == "__main__":
     create_DB()
+=======
+        with sqlite3.connect(DB_PATH) as connection:
+            cursor = connection.cursor()
+            # Check if user already exists
+            cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+            user = cursor.fetchone()
+            if user:
+                print(f"User {username} already exists!")
+                return False
+            # Insert the new user
+            cursor.execute("INSERT INTO users (id, username, password) VALUES (?, ?, ?)", 
+                          (user_id, username, hashed_password))
+            # Don't forget to commit the transaction
+            connection.commit()
+            print(f"User {username} registered successfully!")
+            return True
+    except sqlite3.Error as e:
+        print(f"SQLite error during registration: {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected error during registration: {e}")
+        return False
+
+
+def login_to_DB(username, password):
+    try:
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        with sqlite3.connect(DB_PATH) as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
+            user = cursor.fetchone()
+            if user and user[0] == hashed_password:
+                print(f"User {username} logged in successfully.")
+                return True
+            else:
+                print(f"Invalid credentials for user: {username}")
+                return False
+    except sqlite3.Error as e:
+        print(f"SQLite error during login: {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected error during login: {e}")
+        return False
+    
+
+>>>>>>> Stashed changes
