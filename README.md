@@ -66,3 +66,8 @@ This project is licensed under the [MIT](https://choosealicense.com/licenses/mit
 
 Inspiration, code snippets, etc.
 * [awesome-readme](https://github.com/matiassingers/awesome-readme)
+* [https://www.scaler.in/build-a-chatroom-in-python/](#https://www.scaler.in/build-a-chatroom-in-python/)
+* [https://www.geeksforgeeks.org/python-gui-tkinter/](https://www.geeksforgeeks.org/python-gui-tkinter/)
+* [https://www.geeksforgeeks.org/gui-chat-application-using-tkinter-in-python/](https://www.geeksforgeeks.org/gui-chat-application-using-tkinter-in-python/)
+* [https://docs.python.org/3/library/tkinter.html](https://docs.python.org/3/library/tkinter.html)
+* [https://docs.python.org/3/library/tkinter.html](https://docs.python.org/3/library/tkinter.html)
