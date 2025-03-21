@@ -1,4 +1,4 @@
-# Valid new registration
+# Valid new registration (works
 register
 newuser123
 password123
@@ -10,3 +10,25 @@ anypassword
 
 # Empty username registration (fail)
 register
+
+password123
+
+# Special character username (works)
+register
+user@example.com
+secure_pass123
+
+# Valid login
+login
+newuser123
+password123
+
+# Invalid password
+login
+newuser123
+wrongpassword
+
+# Non-existent user
+login
+nonexistentuser
+anypassword
