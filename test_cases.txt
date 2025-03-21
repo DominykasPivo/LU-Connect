@@ -1,0 +1,12 @@
+# Valid new registration
+register
+newuser123
+password123
+
+# Duplicate user registration (fail)
+register
+newuser123
+anypassword
+
+# Empty username registration (fail)
+register
