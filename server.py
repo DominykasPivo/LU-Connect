@@ -3,8 +3,10 @@ import socket
 import threading
 import queue 
 from authentication import login_to_DB, register_to_DB, create_DB
+import pygame #for sound notification
+import os
 import time
-import pygame
+from encryption import encrypt_message, decrypt_message
 
 pygame.mixer.init()
 
@@ -16,7 +18,7 @@ MAX_CLIENTS = 3 # when there will be 3 clients connected to the server, the 4th 
 clients = {}
 clients_lock = threading.Lock()
 
-semaphore = threading.Semaphore(2)
+semaphore = threading.Semaphore(MAX_CLIENTS)
 waiting_queue = queue.Queue()
 
 sound_preferences = {}
@@ -24,9 +26,57 @@ sound_preferences = {}
 def handle_file_transfer():
     pass
 
+# Create directory for encrypted chat logs if it doesn't exist
+if not os.path.exists("chat_logs"):
+    os.makedirs("chat_logs")
+
+def store_message(username, message):
+    """Store a message in encrypted form"""
+    # Create timestamp-based filename (one file per day)
+    timestamp = time.strftime("%Y-%m-%d")
+    filename = f"chat_logs/chat_{timestamp}.log"
+    
+    # Format the message with timestamp and username
+    current_time = time.strftime("%H:%M:%S")
+    formatted_msg = f"[{current_time}] {username}: {message}"
+    
+    # Encrypt the message
+    encrypted_msg = encrypt_message(formatted_msg)
+    
+    # Append to the log file
+    with open(filename, "ab") as f:  # Using binary mode for encrypted data to
+        f.write(encrypted_msg + b"\n")
+    
+    print(f"Message encrypted and stored in {filename}")
+
+# Function to read and decrypt chat logs for admin purposes.
+# Can view past messages with read_encrypted_logs("2025-03-21") (for a specific date)
+def read_encrypted_logs(date=None):
+    """Utility function to read and decrypt chat logs"""
+    if date is None:
+        date = time.strftime("%Y-%m-%d")
+    
+    filename = f"chat_logs/chat_{date}.log"
+    if not os.path.exists(filename):
+        print(f"No chat logs found for {date}")
+        return []
+    
+    messages = []
+    with open(filename, "rb") as f:
+        for line in f:
+            if line.strip():
+                try:
+                    decrypted_msg = decrypt_message(line.strip())
+                    messages.append(decrypted_msg)
+                    print(decrypted_msg)
+                except Exception as e:
+                    print(f"[ERROR] Could not decrypt message: {e}")
+    
+    return messages
+
 
 def recv_all(sock):
-    """Helper function to receive a complete message from the client."""
+    #Helper function to receive a complete message from the client.
     data = b""
     while True:
         try:
@@ -51,12 +101,14 @@ def handle_login(client_socket, username, password):
             print(f"User {username} logged in successfully.")
             return True
         else:
-            client_socket.send("success".encode())
-            print(f"User {username} logged in successfully.")
+            client_socket.send("Invalid credentials!".encode())
+            print(f"Invalid credentials for user: {username}")
             return False
     except Exception as e:
         response = f"Error during login: {e}"
-        client_socket.send(response.encode())        
+        client_socket.send(response.encode())       
+        print(response)
+        return False 
     
     
                 
@@ -97,7 +149,7 @@ def broadcast_message(sender_socket, message):
 
 def handle_request(client_socket, client_address):
     with clients_lock:
-        if len(clients) >= 2:  # If server is full
+        if len(clients) >= MAX_CLIENTS:  # If server is full
             print(f"[WAITING] {client_address} added to queue.")
             waiting_queue.put((client_socket, client_address))
             client_socket.send("queue".encode())  # Notify client they're in queue
@@ -150,6 +202,10 @@ def handle_request(client_socket, client_address):
                         client_socket.send(f"Sound {status}".encode())
                         print(f"Sound {status} for {clients[client_socket]}")
                 else:
+                    # Store the message in encrypted form
+                    with clients_lock:
+                        current_username = clients[client_socket]
+                    store_message(current_username, message)
                     with clients_lock: #ensuring thread safety
                         for client in clients:
                             if client != client_socket:
@@ -184,34 +240,23 @@ def handle_request(client_socket, client_address):
                 threading.Thread(target=handle_request, args=(queue_client_socket, queue_client_address)).start()
 
         
-# def manage_waiting_queue():
-#     with clients_lock:
-#             active_clients = len(clients)
-
-#     while True:
-#         if not waiting_queue.empty() and  active_clients < 2:
-#             client_socket, client_address = waiting_queue.get()
-#             print(f"[QUEUE] Moving {client_address} from queue to active clients.")
-#             client_socket.send("welcome".encode())  # Notify client they can join
-#             threading.Thread(target=handle_request, args=(client_socket, client_address)).start()
-#         time.sleep(1)
-
-
 
 def start_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((SERVER_HOST, SERVER_PORT))
-    server_socket.listen(2)
+    server_socket.listen(MAX_CLIENTS)
     print(f"Server is listening on {SERVER_HOST}:{SERVER_PORT}")
-    
-    #threading.Thread(target=manage_waiting_queue, daemon=True).start()
+
+    # Can view past messages with read_encrypted_logs("2025-03-21") (for a specific date)
+    #read_encrypted_logs("2025-03-21")
+
 
     #accepting the clients
     while True:
         client_socket, client_address = server_socket.accept()
         with clients_lock:
             active_clients = len(clients)
-        if active_clients >= 2: # take in up to three clients at once 
+        if active_clients >= MAX_CLIENTS: # take in up to three clients at once 
             print(f"[WAITING] {client_address} added to waiting queue.")
             waiting_queue.put((client_socket, client_address))
             client_socket.send("queue".encode())
@@ -223,8 +268,3 @@ def start_server():
 if __name__ == "__main__":
     create_DB()
     start_server()
-
-#TASKS:
-#implement the waiting queue
-#implement the client side
-#think of more implementations for the server
